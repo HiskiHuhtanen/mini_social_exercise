@@ -866,10 +866,54 @@ def loop_color(user_id):
     return f'rgb({r % 128 + 80}, {g % 128 + 80}, {b % 128 + 80})'
 
 
-
 # ----- Functions to be implemented are below
+# Coding Assignment #2
 
-# Task 3.1
+# Assignment 2.2
+def user_risk_analysis(user_id):
+    """
+    Args:
+        user_id: The ID of the user on which we perform risk analysis.
+
+    Returns:
+        A float number score showing the risk associated with this user. There are no strict rules or bounds to this score, other than that a score of less than 1.0 means no risk, 1.0 to 3.0 is low risk, 3.0 to 5.0 is medium risk and above 5.0 is high risk. (An upper bound of 5.0 is applied to this score elsewhere in the codebase) 
+        
+        You will be able to check the scores by logging in with the administrator account:
+            username: admin
+            password: admin
+        Then, navigate to the /admin endpoint. (http://localhost:8080/admin)
+    """
+    
+    score = 0
+
+    return score;
+
+    
+# Assignment 2.1
+def moderate_content(content):
+    """
+    Args
+        content: the text content of a post or comment to be moderated.
+        
+    Returns: 
+        A tuple containing the moderated content (string) and a severity score (float). There are no strict rules or bounds to the severity score, other than that a score of less than 1.0 means no risk, 1.0 to 3.0 is low risk, 3.0 to 5.0 is medium risk and above 5.0 is high risk.
+    
+    This function moderates a string of content and calculates a severity score based on
+    rules loaded from the 'censorship.dat' file. These are already loaded as TIER1_WORDS, TIER2_PHRASES and TIER3_WORDS. Tier 1 corresponds to strong profanity, Tier 2 to scam/spam phrases and Tier 3 to mild profanity.
+    
+    You will be able to check the scores by logging in with the administrator account:
+            username: admin
+            password: admin
+    Then, navigate to the /admin endpoint. (http://localhost:8080/admin)
+    """
+
+    moderated_content = content
+    score = 0
+    
+    return moderated_content, score
+
+# Coding Assignment #3
+# Assignment 3.1
 def recommend(user_id, filter_following):
     """
     Args:
@@ -893,50 +937,6 @@ def recommend(user_id, filter_following):
     recommended_posts = {} 
 
     return recommended_posts;
-
-# Task 3.2
-def user_risk_analysis(user_id):
-    """
-    Args:
-        user_id: The ID of the user on which we perform risk analysis.
-
-    Returns:
-        A float number score showing the risk associated with this user. There are no strict rules or bounds to this score, other than that a score of less than 1.0 means no risk, 1.0 to 3.0 is low risk, 3.0 to 5.0 is medium risk and above 5.0 is high risk. (An upper bound of 5.0 is applied to this score elsewhere in the codebase) 
-        
-        You will be able to check the scores by logging in with the administrator account:
-            username: admin
-            password: admin
-        Then, navigate to the /admin endpoint. (http://localhost:8080/admin)
-    """
-    
-    score = 0
-
-    return score;
-
-    
-# Task 3.3
-def moderate_content(content):
-    """
-    Args
-        content: the text content of a post or comment to be moderated.
-        
-    Returns: 
-        A tuple containing the moderated content (string) and a severity score (float). There are no strict rules or bounds to the severity score, other than that a score of less than 1.0 means no risk, 1.0 to 3.0 is low risk, 3.0 to 5.0 is medium risk and above 5.0 is high risk.
-    
-    This function moderates a string of content and calculates a severity score based on
-    rules loaded from the 'censorship.dat' file. These are already loaded as TIER1_WORDS, TIER2_PHRASES and TIER3_WORDS. Tier 1 corresponds to strong profanity, Tier 2 to scam/spam phrases and Tier 3 to mild profanity.
-    
-    You will be able to check the scores by logging in with the administrator account:
-            username: admin
-            password: admin
-    Then, navigate to the /admin endpoint. (http://localhost:8080/admin)
-    """
-
-    moderated_content = content
-    score = 0
-    
-    return moderated_content, score
-
 
 if __name__ == '__main__':
     app.run(debug=True, port=8080)
