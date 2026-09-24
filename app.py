@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, g
+from flask import Flask, abort, render_template, request, redirect, url_for, session, flash, g
 from werkzeug.security import generate_password_hash, check_password_hash
 from cryptography.fernet import Fernet
 import collections
@@ -407,6 +407,15 @@ def about():
 def privacy():
     return render_template('privacy.html.j2')
 
+@app.route('/messages')
+def messages():
+    return render_template('messages.html.j2')
+
+@app.route('/messages/<int:conversation_id>')
+def conversation(conversation_id):
+    query = ""
+    #need to get the messages from the id
+    return render_template('conversation.html.j2')
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
@@ -938,6 +947,41 @@ def recommend(user_id, filter_following):
 
     return recommended_posts;
 
+
+
+#OWN STUFF!!!
+
+@app.route('/messages/<int:recipient_id>', methods=['POST'])
+def goto_conversation(recipient_id):
+
+    #get current user id
+    #get the other users id
+    #check from conversations table if the ids match anywhere
+    #(smaller id goes into user_one_id, bigger user_two_id)
+    #if no conversation -> create conversation and open the page
+    #if conversation -> open the page
+    bigger_id = None
+    smaller_id = None
+    current_user_id = session.get('user_id')
+    if current_user_id < recipient_id:
+        smaller_id = current_user_id
+        bigger_id = recipient_id
+    else:
+        smaller_id = recipient_id
+        bigger_id = current_user_id
+
+    conversation = query_db('SELECT id FROM conversations WHERE user_one_id = ? AND user_two_id = ?', (smaller_id, bigger_id), one = True)
+
+    if conversation:
+        conversation_id = conversation['id']
+    else: 
+        db = get_db()
+        cur = db.execute('INSERT INTO conversations (user_one_id, user_two_id) VALUES (?, ?)', (smaller_id, bigger_id))
+        db.commit()
+        conversation_id = cur.lastrowid
+
+
+    return redirect(url_for('conversation', conversation_id = conversation_id))
+
 if __name__ == '__main__':
     app.run(debug=True, port=8080)
-
