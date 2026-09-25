@@ -6,7 +6,7 @@ import json
 import sqlite3
 import hashlib
 import re
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 app = Flask(__name__)
 app.secret_key = '123456789' 
@@ -228,6 +228,10 @@ def add_post():
         # This will catch empty posts or posts that were fully censored
         flash('Post cannot be empty or was fully censored.', 'warning')
 
+
+    #update streak
+    update_streak()
+
     # Redirect back to the main feed to see the new post
     return redirect(url_for('feed'))
     
@@ -409,13 +413,30 @@ def privacy():
 
 @app.route('/messages')
 def messages():
-    return render_template('messages.html.j2')
+    current_user_id = session.get('user_id')
+    conversations = query_db('SELECT id FROM conversations WHERE user_one_id = ? OR user_two_id = ?', (current_user_id, current_user_id),)
+    return render_template('messages.html.j2' , conversations = conversations)
 
-@app.route('/messages/<int:conversation_id>')
+@app.route('/messages/chat/<int:conversation_id>',  methods=['GET', 'POST'])
 def conversation(conversation_id):
-    query = ""
+    current_user_id = session.get('user_id')
     #need to get the messages from the id
-    return render_template('conversation.html.j2')
+
+    if request.method == 'POST':
+        # Get content from the submitted form
+        content = request.form.get('content')
+        db = get_db()
+        db.execute('INSERT INTO messages (conversation_id, sender_id, content) VALUES (?, ?, ?)', (conversation_id, current_user_id, content))
+        db.commit()
+
+    #get other users name for chat page flair
+    other_user = query_db('''SELECT users.username FROM conversations JOIN users ON users.id = CASE 
+                            WHEN conversations.user_one_id = ? THEN conversations.user_two_id
+                            ELSE conversations.user_one_id
+                        END WHERE conversations.id = ?''' , (current_user_id, conversation_id), one=True)
+
+    messages = query_db('SELECT * FROM messages JOIN users ON messages.sender_id = users.id WHERE conversation_id = ? ORDER BY created_at ASC' , (conversation_id,))
+    return render_template('conversation.html.j2' , messages = messages , other_user = other_user)
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
@@ -510,6 +531,9 @@ def add_comment(post_id):
         flash('Your comment was added.', 'success')
     else:
         flash('Comment cannot be empty.', 'warning')
+
+    #update streak
+    update_streak()
 
     # Redirect back to the page the user came from (likely the post detail page)
     return redirect(request.referrer or url_for('post_detail', post_id=post_id))
@@ -951,8 +975,8 @@ def recommend(user_id, filter_following):
 
 #OWN STUFF!!!
 
-@app.route('/messages/<int:recipient_id>', methods=['POST'])
-def goto_conversation(recipient_id):
+@app.route('/messages/<int:user_id>', methods=['POST'])
+def goto_conversation(user_id):
 
     #get current user id
     #get the other users id
@@ -963,11 +987,11 @@ def goto_conversation(recipient_id):
     bigger_id = None
     smaller_id = None
     current_user_id = session.get('user_id')
-    if current_user_id < recipient_id:
+    if current_user_id < user_id:
         smaller_id = current_user_id
-        bigger_id = recipient_id
+        bigger_id = user_id
     else:
-        smaller_id = recipient_id
+        smaller_id = user_id
         bigger_id = current_user_id
 
     conversation = query_db('SELECT id FROM conversations WHERE user_one_id = ? AND user_two_id = ?', (smaller_id, bigger_id), one = True)
@@ -982,6 +1006,38 @@ def goto_conversation(recipient_id):
 
 
     return redirect(url_for('conversation', conversation_id = conversation_id))
+
+
+def update_streak():
+
+    #look at users streak
+    #if was updated today do nothing
+    #if was updated yesterday, increment by 1
+    #if was updated someother day than yesterday, reset to 0
+
+    #dates from geeksforgeeks
+    today = date.today()
+    yesterday = today - timedelta(days = 1)
+
+    #get user infos
+    current_user_id = session.get('user_id')
+    db = get_db()
+    streak_update_date = query_db('SELECT streak_date FROM users WHERE id = ?' , (current_user_id,), one=True)['streak_date']
+
+    #update streak
+    if streak_update_date == today:
+        return
+    elif streak_update_date == yesterday:
+        streak_value = query_db('SELECT streak_value FROM users WHERE id = ?' , (current_user_id,), one=True)['streak_value']
+        streak_value += 1
+    else:
+        streak_value = 1
+
+    db.execute('UPDATE users SET streak_value = ?, streak_date = ? WHERE id = ?' ,  (streak_value, today, current_user_id))
+    db.commit()
+
+    #flash so we can have a pop up
+    flash(f'{streak_value}🔥', 'streak')
 
 if __name__ == '__main__':
     app.run(debug=True, port=8080)

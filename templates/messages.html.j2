@@ -9,4 +9,12 @@
     </div>
 </div>
 
+{% for conversation in conversations %}
+    <div>
+        <a href="{{ url_for('conversation', conversation_id=conversation.id) }}"> Chat {{ conversation.id }} </a>
+    </div>
+{% else %}
+    <p>No chats</p>
+{% endfor %}
+
 {% endblock %}

@@ -200,4 +200,12 @@
       Next &raquo;
     </a>
   </div>
+
+
+{% with messages = get_flashed_messages(category_filter=['streak']) %}
+    {% for message in messages %}
+        <div class="alert alert-success position-fixed bottom-0 end-0 m-4 shadow" style="z-index: 1050;"> {{ message }}</div>
+    {% endfor %}
+{% endwith %}
+
 {% endblock %}
