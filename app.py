@@ -115,8 +115,8 @@ def feed():
     #  2. Build the Query 
     where_clause = ""
     if show == 'following' and current_user_id:
-        where_clause = "WHERE p.user_id IN (SELECT followed_id FROM follows WHERE follower_id = ?)"
-        params.append(current_user_id)
+        where_clause = "WHERE p.user_id IN (SELECT followed_id FROM follows WHERE follower_id = ? AND group_id IS NULL)"  #ADDITION, now doesn't show group posts
+        params.append(current_user_id) 
 
     # Add the pagination parameters to the query arguments
     pagination_params = (POSTS_PER_PAGE, offset)
@@ -130,7 +130,7 @@ def feed():
             LEFT JOIN (
                 SELECT post_id, COUNT(*) as total_reactions FROM reactions GROUP BY post_id
             ) r ON p.id = r.post_id
-            {where_clause}
+            {where_clause} AND group_id IS NULL
             ORDER BY total_reactions DESC, p.created_at DESC
             LIMIT ? OFFSET ?
         """
@@ -143,7 +143,7 @@ def feed():
             SELECT p.id, p.content, p.created_at, u.username, u.id as user_id
             FROM posts p
             JOIN users u ON p.user_id = u.id
-            {where_clause}
+            {where_clause} AND group_id IS NULL
             ORDER BY p.created_at DESC
             LIMIT ? OFFSET ?
         """
@@ -214,14 +214,17 @@ def add_post():
     # Get content from the submitted form
     content = request.form.get('content')
 
+    #OWN need to get group_id
+    group_id = request.form.get('group_id' , type=int)
+
     # Pass the user's content through the moderation function
     moderated_content = content
 
     # Basic validation to ensure post is not empty
     if moderated_content and moderated_content.strip():
         db = get_db()
-        db.execute('INSERT INTO posts (user_id, content) VALUES (?, ?)',
-                   (user_id, moderated_content))
+        db.execute('INSERT INTO posts (user_id, content, group_id) VALUES (?, ?, ?)',
+                   (user_id, moderated_content, group_id))
         db.commit()
         flash('Your post was successfully created!', 'success')
     else:
@@ -232,10 +235,13 @@ def add_post():
     #update streak
     update_streak()
 
-    # Redirect back to the main feed to see the new post
-    return redirect(url_for('feed'))
-    
-    
+    # Redirect back to the main feed to see the new post AND IF NOT GROUP
+    if (group_id == None):
+        return redirect(url_for('feed'))
+    else:
+        return redirect(url_for('group_feed', group_id=group_id))
+
+
 @app.route('/posts/<int:post_id>/delete', methods=['POST'])
 def delete_post(post_id):
     """Handles deleting a post."""
@@ -437,6 +443,167 @@ def conversation(conversation_id):
 
     messages = query_db('SELECT * FROM messages JOIN users ON messages.sender_id = users.id WHERE conversation_id = ? ORDER BY created_at ASC' , (conversation_id,))
     return render_template('conversation.html.j2' , messages = messages , other_user = other_user)
+
+@app.route('/groups')
+def groups():
+
+    #get users id
+    #check what groups that id appears in group_members
+    #show the groups in the My Groups box
+    #show all other groups in a scrollable box below
+
+    current_user_id = session.get('user_id')
+
+    users_groups = query_db('SELECT groups.id, groups.name, groups.description FROM groups JOIN group_members ON groups.id = group_members.group_id WHERE group_members.user_id = ?' , (current_user_id,))
+    other_groups = query_db('SELECT groups.id, groups.name, groups.description FROM groups')
+    return render_template('groups.html.j2', users_groups = users_groups, other_groups = other_groups)
+
+
+#this is used for the groups feeds
+#it grabs the id and filters posts only by that id
+#also feeds name and other info for the html
+@app.route('/groups/<int:group_id>', methods=['GET', 'POST'])
+def group_feed(group_id):
+    #  1. Get Pagination and Filter Parameters 
+    try:
+        page = int(request.args.get('page', 1))
+    except ValueError:
+        page = 1
+    sort = request.args.get('sort', 'new').lower()
+    show = request.args.get('show', 'all').lower()
+    
+    # Define how many posts to show per page
+    POSTS_PER_PAGE = 10
+    offset = (page - 1) * POSTS_PER_PAGE
+
+    current_user_id = session.get('user_id')
+    params = []
+
+    #  2. Build the Query 
+    where_clause = "WHERE p.group_id = ?"
+    params.append(group_id)
+
+    #Get the group name
+    group_name = query_db('SELECT name FROM groups WHERE id = ?', (group_id,), one=True)['name']
+
+    # Add the pagination parameters to the query arguments
+    pagination_params = (POSTS_PER_PAGE, offset)
+
+    if sort == 'popular':
+        query = f"""
+            SELECT p.id, p.content, p.created_at, u.username, u.id as user_id,
+                   IFNULL(r.total_reactions, 0) as total_reactions
+            FROM posts p
+            JOIN users u ON p.user_id = u.id
+            LEFT JOIN (
+                SELECT post_id, COUNT(*) as total_reactions FROM reactions GROUP BY post_id
+            ) r ON p.id = r.post_id
+            {where_clause}
+            ORDER BY total_reactions DESC, p.created_at DESC
+            LIMIT ? OFFSET ?
+        """
+        final_params = params + list(pagination_params)
+        posts = query_db(query, final_params)
+    elif sort == 'recommended':
+        posts = recommend(current_user_id, show == 'following' and current_user_id)
+    else:  # Default sort is 'new'
+        query = f"""
+            SELECT p.id, p.content, p.created_at, u.username, u.id as user_id
+            FROM posts p
+            JOIN users u ON p.user_id = u.id
+            {where_clause}
+            ORDER BY p.created_at DESC
+            LIMIT ? OFFSET ?
+        """
+        final_params = params + list(pagination_params)
+        posts = query_db(query, final_params)
+
+    posts_data = []
+    for post in posts:
+        # Determine if the current user follows the poster
+        followed_poster = False
+        if current_user_id and post['user_id'] != current_user_id:
+            follow_check = query_db(
+                'SELECT 1 FROM follows WHERE follower_id = ? AND followed_id = ?',
+                (current_user_id, post['user_id']),
+                one=True
+            )
+            if follow_check:
+                followed_poster = True
+
+        # Determine if the current user reacted to this post and with what reaction
+        user_reaction = None
+        if current_user_id:
+            reaction_check = query_db(
+                'SELECT reaction_type FROM reactions WHERE user_id = ? AND post_id = ?',
+                (current_user_id, post['id']),
+                one=True
+            )
+            if reaction_check:
+                user_reaction = reaction_check['reaction_type']
+
+        reactions = query_db('SELECT reaction_type, COUNT(*) as count FROM reactions WHERE post_id = ? GROUP BY reaction_type', (post['id'],))
+        comments_raw = query_db('SELECT c.id, c.content, c.created_at, u.username, u.id as user_id FROM comments c JOIN users u ON c.user_id = u.id WHERE c.post_id = ? ORDER BY c.created_at ASC', (post['id'],))
+        post_dict = dict(post)
+        post_dict['content'], _ = moderate_content(post_dict['content'])
+        comments_moderated = []
+        for comment in comments_raw:
+            comment_dict = dict(comment)
+            comment_dict['content'], _ = moderate_content(comment_dict['content'])
+            comments_moderated.append(comment_dict)
+        posts_data.append({
+            'post': post_dict,
+            'reactions': reactions,
+            'user_reaction': user_reaction,
+            'followed_poster': followed_poster,
+            'comments': comments_moderated
+        })
+
+    #  4. Render Template with Pagination Info 
+    return render_template('groupfeed.html.j2',
+                           group_id=group_id,
+                           group_name=group_name, 
+                           posts=posts_data, 
+                           current_sort=sort,
+                           current_show=show,
+                           page=page, # Pass current page number
+                           per_page=POSTS_PER_PAGE, # Pass items per page
+                           reaction_emojis=REACTION_EMOJIS,
+                           reaction_types=REACTION_TYPES)
+
+
+@app.route('/group_creation', methods=['GET', 'POST'])
+def group_creation():
+    if request.method == 'POST':
+        group_name = request.form['name']
+        description = request.form['description']
+        current_user_id = session.get('user_id')
+        db = get_db()
+        cur = db.cursor()
+        try:
+            #make group
+            cur.execute(
+                'INSERT INTO groups (name, description) VALUES (?, ?)',
+                (group_name, description)
+            )
+            db.commit()
+            #add creator to group
+            cur.execute(
+                'INSERT INTO group_members (user_id, group_id, user_role) VALUES (?, ?, ?)',
+                (current_user_id, cur.lastrowid, 'admin')
+            )
+            db.commit()
+
+            flash(f'{group_name} has been created.', 'success')
+            return redirect(url_for('feed'))
+
+        except sqlite3.IntegrityError:
+            flash('Group name already taken. Please choose another one.', 'danger')
+        finally:
+            cur.close()
+            db.close()
+            
+    return render_template('group_creation.html.j2')
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
