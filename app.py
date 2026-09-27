@@ -419,8 +419,20 @@ def privacy():
 
 @app.route('/messages')
 def messages():
+    #get users id from conv
+    #get the id of the other user (one that isnt current user id)
+    #get that users name
+    #give it to the chat box to display
+
     current_user_id = session.get('user_id')
-    conversations = query_db('SELECT id FROM conversations WHERE user_one_id = ? OR user_two_id = ?', (current_user_id, current_user_id),)
+    conversations = query_db('''
+        SELECT conversations.id, users.username FROM conversations
+        JOIN users ON users.id = CASE
+            WHEN conversations.user_one_id = ? THEN conversations.user_two_id
+            ELSE conversations.user_one_id
+        END
+        WHERE conversations.user_one_id = ? OR conversations.user_two_id = ?''', (current_user_id, current_user_id, current_user_id))
+    
     return render_template('messages.html.j2' , conversations = conversations)
 
 @app.route('/messages/chat/<int:conversation_id>',  methods=['GET', 'POST'])
@@ -429,7 +441,7 @@ def conversation(conversation_id):
     #need to get the messages from the id
 
     if request.method == 'POST':
-        # Get content from the submitted form
+        #get the message and save it
         content = request.form.get('content')
         db = get_db()
         db.execute('INSERT INTO messages (conversation_id, sender_id, content) VALUES (?, ?, ?)', (conversation_id, current_user_id, content))
@@ -455,7 +467,7 @@ def groups():
     current_user_id = session.get('user_id')
 
     users_groups = query_db('SELECT groups.id, groups.name, groups.description FROM groups JOIN group_members ON groups.id = group_members.group_id WHERE group_members.user_id = ?' , (current_user_id,))
-    other_groups = query_db('SELECT groups.id, groups.name, groups.description FROM groups')
+    other_groups = query_db('SELECT groups.id, groups.name, groups.description FROM groups WHERE groups.id NOT IN (SELECT group_id FROM group_members WHERE user_id = ?)', (current_user_id,))
     return render_template('groups.html.j2', users_groups = users_groups, other_groups = other_groups)
 
 
@@ -604,6 +616,31 @@ def group_creation():
             db.close()
             
     return render_template('group_creation.html.j2')
+
+###JOIN GROUP
+@app.route('/groups/<int:group_id>/join', methods=['POST'])
+def join_group(group_id):
+    current_user_id = session.get('user_id')
+    if not current_user_id:
+        flash('You must be logged in to create a post.', 'danger')
+        return redirect(url_for('login'))
+    db = get_db()
+    db.execute('INSERT INTO group_members (user_id, group_id) VALUES (?, ?)', (current_user_id, group_id))
+    db.commit()
+    flash('Joined Group! :)', 'success')
+    return redirect(url_for('group_feed', group_id=group_id))
+
+###LEAVE GROUP
+@app.route('/groups/<int:group_id>/leave', methods=['POST'])
+def leave_group(group_id):
+    current_user_id = session.get('user_id')
+    db = get_db()
+    db.execute('DELETE FROM group_members WHERE user_id = ? AND group_id = ?', (current_user_id, group_id))
+    db.commit()
+    flash('You have left the group :(', 'info')
+    users_groups = query_db('SELECT groups.id, groups.name, groups.description FROM groups JOIN group_members ON groups.id = group_members.group_id WHERE group_members.user_id = ?' , (current_user_id,))
+    other_groups = query_db('SELECT groups.id, groups.name, groups.description FROM groups')
+    return render_template('groups.html.j2', users_groups = users_groups, other_groups = other_groups)
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():

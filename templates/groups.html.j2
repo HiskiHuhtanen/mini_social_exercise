@@ -12,8 +12,11 @@
                 <div class="mb-3">
                     <strong>{{ group.name }}</strong>
                     <p class="text-muted mb-0"> {{ group.description }} </p>
-                    <form action="{{ url_for('group_feed', group_id=group.id) }}" method="POST" class="d-inline">
+                    <form action="{{ url_for('group_feed', group_id=group.id, join=False) }}" method="POST" class="d-inline">
                      <button type="submit" class="btn btn-primary">Go to Group</button>
+                    </form>
+                    <form action="{{ url_for('leave_group', group_id=group.id) }}" method="POST" class="d-inline">
+                     <button type="submit" class="btn btn-danger">Leave Group</button>
                     </form>
                 </div>
             {% else %}
@@ -25,18 +28,16 @@
     </div>
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-primary ">
-            <h2 class="h4 mb-0">All Groups</h2>
+            <h2 class="h4 mb-0">Other Groups</h2>
         </div>
 
-        <div class="card-body"
-             style="max-height: 500px; overflow-y: auto;">
-
+        <div class="card-body" style="max-height: 500px; overflow-y: auto;">
             {% for group in other_groups %}
                 <div class="mb-3">
                     <strong>{{ group.name }}</strong>
                     <p class="text-muted mb-0"> {{ group.description }}</p>
-                    <form action="{{ url_for('group_feed', group_id=group.id) }}" method="POST" class="d-inline">
-                     <button type="submit" class="btn btn-primary">Go to Group</button>
+                    <form action="{{ url_for('join_group', group_id=group.id) }}" method="POST" class="d-inline">
+                     <button type="submit" class="btn btn-primary">Join Group</button>
                     </form>
                 </div>
             {% else %}

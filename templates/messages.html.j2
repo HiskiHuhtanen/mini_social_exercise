@@ -9,12 +9,17 @@
     </div>
 </div>
 
-{% for conversation in conversations %}
-    <div>
-        <a href="{{ url_for('conversation', conversation_id=conversation.id) }}"> Chat {{ conversation.id }} </a>
+<div class="card-body" style="max-height: 500px; overflow-y: auto;">
+    <p class="text-muted mb-3"> Click to chat</p>
+     <div class="list-group">
+    {% for conversation in conversations %}
+        <div>
+            <a href="{{ url_for('conversation', conversation_id=conversation.id) }}"> Chat with {{ conversation.username }} </a>
+        </div>
+    {% else %}
+        <p>No chats</p>
+    {% endfor %}
     </div>
-{% else %}
-    <p>No chats</p>
-{% endfor %}
+</div>
 
 {% endblock %}
