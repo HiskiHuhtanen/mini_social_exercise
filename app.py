@@ -1017,11 +1017,14 @@ def admin_dashboard():
     comments.sort(key=lambda x: x['risk_score'], reverse=True) # Sort after fetching and scoring
 
 
+    #reports
+    reports = query_db('SELECT id, content_type, content_id, report_amount FROM reports WHERE report_amount > 0 ORDER BY report_amount DESC')
+
     return render_template('admin.html.j2', 
                            users=users, 
                            posts=posts, 
                            comments=comments,
-                           
+                           reports=reports,
                            # Pagination for Users
                            users_page=users_page,
                            total_users_pages=total_users_pages,
@@ -1120,10 +1123,59 @@ def user_risk_analysis(user_id):
             password: admin
         Then, navigate to the /admin endpoint. (http://localhost:8080/admin)
     """
-    
-    score = 0
+    #posts and comments
+    #determine account age in days
+    #apply multiplier to base_score based on account age
+    #if less than 7 , *1.5
+    #else risk_score = base_score
 
-    return score;
+    #user risk score
+    #profile_score = check bio and get score
+    #average_post_score = get content score for all posts and average it, if no posts , 0
+    #average_comment_score = get content score for all comments and average it, if no comments , 0
+    #content_risk_score = (profile_score * 1) + (average_post_score * 3) + (average_comment_score * 1)
+    #apply age multiplier,   <7 days = *1.5, <30 *1.2, else *1.0
+    #cap at 5.0
+
+    user = query_db('SELECT * FROM users WHERE id = ?', (user_id,), one=True)
+    _, profile_score = moderate_content(user['profile']) #get only score
+
+    posts = query_db('SELECT * FROM posts WHERE user_id = ?', (user_id,))
+    post_scores = []
+    for post in posts:
+        _, score = moderate_content(post['content'])
+        post_scores.append(score)
+    if not post_scores:
+        average_post_score = 0
+    else:
+        average_post_score = sum(post_scores) / len(post_scores)
+
+    comments = query_db('SELECT * FROM comments WHERE user_id = ?', (user_id,))
+    comment_scores = []
+    for comment in comments:
+        _, score = moderate_content(comment['content'])
+        comment_scores.append(score)
+    if not comment_scores:
+        average_comment_score = 0
+    else:
+        average_comment_score = sum(comment_scores) / len(comment_scores)
+
+    content_risk_score = (profile_score * 1) + (average_post_score * 3) + (average_comment_score * 1)
+
+    user_account_age = (datetime.now() - user['created_at']).days
+
+    if user_account_age < 7:
+        content_risk_score = content_risk_score * 1.5
+    elif user_account_age < 30:
+        content_risk_score = content_risk_score * 1.2
+    else:
+        content_risk_score = content_risk_score
+
+    score = content_risk_score
+    if score > 5.0:
+        score = 5.0
+
+    return score
 
     
 # Assignment 2.1
@@ -1144,9 +1196,59 @@ def moderate_content(content):
     Then, navigate to the /admin endpoint. (http://localhost:8080/admin)
     """
 
-    moderated_content = content
+    #check severe violations
+    #look through words if any match the list, remove and give score of 5.0
+    #if no matches (relatable, am I right, har har har), check the whole phrase against the phrase list, remove and give score of 5
+    #if pass, 0.0 score, more checks
+    #word matches for tier 3 list, swap to **** , score +2
+    #remove urls, score +2
+    #if >15 letters and >70% caps, score +0.5
+
+    moderated_content = ''
     score = 0
-    
+
+    if content is None:
+        return moderated_content, score
+
+    #https://stackoverflow.com/questions/6181763/converting-a-string-to-a-list-of-words
+    #sometimes I forget, and that's alright
+    for word in content.split():
+        if word.lower() in TIER1_WORDS:
+            moderated_content = '[content removed due to severe violation]'
+            score = 5.0
+            return moderated_content, score
+
+    for phrase in TIER2_PHRASES:
+        #if content.lower().strip() in phrase.lower().strip():
+        if re.search(r'\b' + re.escape(phrase) + r'\b', content, re.IGNORECASE):
+            moderated_content = '[content removed due to spam/scam policy]'
+            score = 5.0
+            return moderated_content, score
+
+    #passed first stage
+    for word in content.split():
+        if word.lower() in TIER3_WORDS:
+            length = len(word)
+            word = ''
+            for i in range(length):
+                word += '*'
+            score += 2.0
+        #https://www.geeksforgeeks.org/python/python-check-url-string/
+        else:
+            clean_word = word.lower().replace('[.]', '.').replace('(.)', '.')   #find hidden links
+            if re.match(r'(https?://|www\.)\S+|\S+\.[a-zA-Z]{2,}', clean_word):
+                word = '[link removed]'
+                score += 2.0
+
+        moderated_content += word + ' '
+
+    #caps check
+    #https://stackoverflow.com/questions/18129830/count-the-uppercase-letters-in-a-string-with-python
+    if len(content) > 15:
+        caps = len(re.findall(r'[A-Z]', content))
+        if caps / len(content) > 0.7:
+            score += 0.5
+
     return moderated_content, score
 
 # Coding Assignment #3
@@ -1242,6 +1344,34 @@ def update_streak():
 
     #flash so we can have a pop up
     flash(f'{streak_value}🔥', 'streak')
+
+
+def report_content(content_id, content_type):
+    #first see if the content has been reported before
+    #if yes, increment report amount by 1
+    #if not, create report entry
+    report = query_db('SELECT * FROM reports WHERE content_id = ? AND content_type = ?', (content_id, content_type), one=True)
+    if report:
+        query_db('UPDATE reports SET report_amount = report_amount + 1 WHERE id = ?', (report['id'],))
+    else:
+        query_db('INSERT INTO reports (content_id, content_type, report_amount) VALUES (?, ?, ?)', (content_id, content_type, 1))
+
+@app.route('/report', methods=['POST'])
+def report():
+    #check that user is logged in
+    #get the content type
+    #get the content id
+    #report the content
+    if not session.get('user_id'):
+        flash('You must be logged in to report content.', 'danger')
+        return redirect(url_for('login'))
+
+    content_id = request.form.get('content_id', type=int)
+    content_type = request.form.get('content_type')
+
+    report_content(content_id, content_type)
+    flash(f'{content_type.capitalize()} reported.', 'success')
+    return redirect(request.referrer or url_for('feed'))
 
 if __name__ == '__main__':
     app.run(debug=True, port=8080)

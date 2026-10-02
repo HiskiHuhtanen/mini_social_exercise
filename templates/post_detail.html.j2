@@ -63,6 +63,12 @@
         {% endif %}
       </div>
 
+    <form action="{{ url_for('report') }}" method="POST" class="d-inline">
+        <input type="hidden" name="content_id" value="{{ post.id }}">
+        <input type="hidden" name="content_type" value="post">
+        <button type="submit" class="btn btn-sm btn-danger"> Report </button>
+    </form>
+
       <hr>
 
       <!-- Comments Section -->
@@ -91,6 +97,12 @@
                 <button type="submit" class="btn btn-sm btn-danger" title="Delete Comment">delete</button>
             </form>
             {% endif %}
+
+            <form action="{{ url_for('report') }}" method="POST" class="d-inline">
+                <input type="hidden" name="content_id" value="{{ comment.id }}">
+                <input type="hidden" name="content_type" value="comment">
+                <button type="submit" class="btn btn-sm btn-danger"> Report</button>
+            </form>
 
           </div>
         </li>
