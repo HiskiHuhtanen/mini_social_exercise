@@ -1018,7 +1018,30 @@ def admin_dashboard():
 
 
     #reports
-    reports = query_db('SELECT id, content_type, content_id, report_amount FROM reports WHERE report_amount > 0 ORDER BY report_amount DESC')
+    reports = query_db('''
+        SELECT r.id, r.content_type, r.content_id, r.report_amount,
+            CASE
+                WHEN r.content_type = 'comment' THEN c.content
+                WHEN r.content_type = 'post' THEN p.content
+            END AS content,
+            CASE
+                WHEN r.content_type = 'comment' THEN c.post_id
+                WHEN r.content_type = 'post' THEN p.id
+            END AS post_id,
+            u.username
+        FROM reports r
+        LEFT JOIN comments c
+            ON r.content_type = 'comment'
+            AND c.id = r.content_id
+        LEFT JOIN posts p
+            ON (r.content_type = 'post' AND p.id = r.content_id)
+            OR (r.content_type = 'comment' AND p.id = c.post_id)
+        LEFT JOIN users u
+            ON r.content_type = 'user'
+            AND u.id = r.content_id
+        WHERE r.report_amount > 0
+        ORDER BY r.report_amount DESC
+    ''')
 
     return render_template('admin.html.j2', 
                            users=users, 
@@ -1091,6 +1114,44 @@ def admin_delete_comment(comment_id):
     db.commit()
     flash(f'Comment {comment_id} has been deleted.', 'success')
     return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/delete/report-content/<int:report_id>', methods=['POST'])
+def admin_delete_report_content(report_id):
+
+    ##check that it is admin
+    #delete the content based on the id and type
+    #posts = delete comments, reactions, posts
+    #comments = delete comments
+    #users = delete users
+    if session.get('username') != 'admin':
+        flash("You do not have permission to perform this action.", "danger")
+        return redirect(url_for('feed'))
+
+    report = query_db('SELECT content_id, content_type FROM reports WHERE id = ?', (report_id,), one=True)
+    if not report:
+        flash('Report not found.', 'danger')
+        return redirect(url_for('admin_dashboard', tab='reports'))
+
+    db = get_db()
+    if report['content_type'] == 'post':
+        db.execute('DELETE FROM comments WHERE post_id = ?', (report['content_id'],))
+        db.execute('DELETE FROM reactions WHERE post_id = ?', (report['content_id'],))
+        db.execute('DELETE FROM posts WHERE id = ?', (report['content_id'],))
+    elif report['content_type'] == 'comment':
+        db.execute('DELETE FROM comments WHERE id = ?', (report['content_id'],))
+    elif report['content_type'] == 'user':
+        if report['content_id'] == session.get('user_id'):
+            flash('You cannot delete your own account from the admin panel.', 'danger')
+            return redirect(url_for('admin_dashboard', tab='reports'))
+        db.execute('DELETE FROM users WHERE id = ?', (report['content_id'],))
+    else:
+        flash('Unsupported report content type.', 'danger')
+        return redirect(url_for('admin_dashboard', tab='reports'))
+
+    db.execute('DELETE FROM reports WHERE id = ?', (report_id,))
+    db.commit()
+    flash('Reported content has been deleted.', 'success')
+    return redirect(url_for('admin_dashboard', tab='reports'))
 
 @app.route('/rules')
 def rules():
@@ -1213,7 +1274,7 @@ def moderate_content(content):
     #https://stackoverflow.com/questions/6181763/converting-a-string-to-a-list-of-words
     #sometimes I forget, and that's alright
     for word in content.split():
-        if word.lower() in TIER1_WORDS:
+        if word.lower() in TIER1_WORDS or word.lower().strip('.,!?') in TIER1_WORDS:
             moderated_content = '[content removed due to severe violation]'
             score = 5.0
             return moderated_content, score
@@ -1227,7 +1288,7 @@ def moderate_content(content):
 
     #passed first stage
     for word in content.split():
-        if word.lower() in TIER3_WORDS:
+        if word.lower() in TIER3_WORDS or word.lower().strip('.,!?') in TIER3_WORDS:
             length = len(word)
             word = ''
             for i in range(length):

@@ -222,6 +222,7 @@
         </div>
     </div>
 
+    <!-- Reports Tab -->
     <div class="tab-pane fade {% if current_tab == 'reports' %}show active{% endif %}" id="reports" role="tabpanel" aria-labelledby="reports-tab">
         <div class="table-responsive">
             <table class="table table-striped table-hover">
@@ -230,7 +231,9 @@
                         <th>Report ID</th>
                         <th>Type</th>
                         <th>Content ID</th>
+                        <th>Content</th>
                         <th>Report Amount</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -238,17 +241,35 @@
                     <tr>
                         <td>{{ report.id }}</td>
                         <td>{{ report.content_type|capitalize }}</td>
-                        <td>{{ report.content_id }}</td>
+                        <td>
+                            {% if report.content_type == 'post' %}
+                                <a href="{{ url_for('post_detail', post_id=report.content_id) }}"> Post #{{ report.content_id }}</a>
+                            {% elif report.content_type == 'comment' %}
+                                <a href="{{ url_for('post_detail', post_id=report.post_id) }}#comment-{{ report.content_id }}">Comment #{{ report.content_id }}</a>
+                            {% elif report.content_type == 'user' %}
+                                <a href="{{ url_for('user_profile', username=report.username) }}">{{ report.username }}</a>
+                            {% else %}
+                                {{ report.content_id }}
+                            {% endif %}
+                        </td>
+                        <td style="max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{{ report.content or '' }}">
+                            {% if report.content_type == 'comment' and report.post_id %}
+                                <a href="{{ url_for('post_detail', post_id=report.post_id) }}#comment-{{ report.content_id }}">{{ report.content }}</a>
+                            {% elif report.content %}
+                                {{ report.content }}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
                         <td>
                             <span class="badge bg-danger">
                                 {{ report.report_amount }}
                             </span>
                         </td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="4" class="text-center text-muted">
-                            No reports yet.
+                        <td>
+                            <form action="{{ url_for('admin_delete_report_content', report_id=report.id) }}" method="POST">
+                                <button type="submit" class="btn btn-sm btn-danger">Delete Content</button>
+                            </form>
                         </td>
                     </tr>
                     {% endfor %}
